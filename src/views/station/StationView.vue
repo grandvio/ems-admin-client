@@ -2,6 +2,7 @@
 import { reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import AddressPicker from '@/components/AddressPicker.vue'
+import StationImages from '@/components/StationImages.vue'
 import DictTag from '@/components/DictTag.vue'
 import Pager from '@/components/Pager.vue'
 import { createStation, deleteStation, pageStations, updateStation } from '@/api/asset'
@@ -24,7 +25,7 @@ function blank() {
   return {
     code: '',
     name: '',
-    stationType: 'PV',
+    stationType: 'STORAGE',
     address: '',
     longitude: null,
     latitude: null,
@@ -183,6 +184,12 @@ load()
         <el-form-item label="并网日期">
           <el-date-picker v-model="form.gridConnectedDate" type="date" value-format="YYYY-MM-DD" />
         </el-form-item>
+        <el-form-item v-if="form.id" label="电站图片">
+          <StationImages :station-id="form.id" @change="load" />
+        </el-form-item>
+        <el-form-item v-else label="电站图片">
+          <span class="image-hint">保存电站后可以上传图片。</span>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="visible = false">取消</el-button>
@@ -191,3 +198,10 @@ load()
     </el-dialog>
   </div>
 </template>
+
+<style scoped>
+.image-hint {
+  color: var(--ems-muted);
+  font-size: 13px;
+}
+</style>

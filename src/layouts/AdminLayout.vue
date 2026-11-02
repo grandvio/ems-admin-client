@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import MenuBranch from '@/components/MenuBranch.vue'
 import { changePassword } from '@/api/system'
+import { deleteAvatar, uploadImage } from '@/api/oss'
 import { useUserStore } from '@/stores/user'
 import { navTree } from '@/utils/tree'
 
@@ -13,6 +14,7 @@ const user = useUserStore()
 const collapsed = ref(false)
 const passwordVisible = ref(false)
 const saving = ref(false)
+const avatarRef = ref()
 const formRef = ref()
 const form = reactive({ oldPassword: '', newPassword: '', confirm: '' })
 
@@ -22,6 +24,30 @@ const title = computed(() => route.meta.title || '能源云')
 function logout() {
   user.reset(router)
   router.replace('/login')
+}
+
+function pickAvatar() {
+  avatarRef.value.value = ''
+  avatarRef.value.click()
+}
+
+async function onAvatar(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  try {
+    await uploadImage({ bizType: 'AVATAR', file, maxBytes: 2 * 1024 * 1024 })
+    await user.loadInfo()
+    ElMessage.success('头像已更新')
+  } catch {
+    // 失败原因已由请求或上传函数提示
+  }
+}
+
+async function removeAvatar() {
+  await deleteAvatar()
+  await user.loadInfo()
+  ElMessage.success('头像已移除')
 }
 
 function openPassword() {
@@ -80,7 +106,7 @@ async function submitPassword() {
         </div>
         <el-dropdown trigger="click">
           <span class="user">
-            <el-avatar :size="28">{{ user.nickname.slice(0, 1) || '用' }}</el-avatar>
+            <el-avatar :size="40" :src="user.info?.avatarUrl || ''">{{ user.nickname.slice(0, 1) || '用' }}</el-avatar>
             <span>
               <b>{{ user.nickname || '用户' }}</b>
               <small>{{ user.info?.tenantName || '—' }}</small>
@@ -88,12 +114,15 @@ async function submitPassword() {
           </span>
           <template #dropdown>
             <el-dropdown-menu>
+              <el-dropdown-item @click="pickAvatar">更换头像</el-dropdown-item>
+              <el-dropdown-item v-if="user.info?.avatarUrl" @click="removeAvatar">移除头像</el-dropdown-item>
               <el-dropdown-item @click="openPassword">修改密码</el-dropdown-item>
               <el-dropdown-item divided @click="logout">退出登录</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
       </header>
+      <input ref="avatarRef" type="file" accept="image/jpeg,image/png,image/webp" hidden @change="onAvatar" />
       <main class="content">
         <router-view />
       </main>

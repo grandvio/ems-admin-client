@@ -21,6 +21,22 @@ export function publishProduct(id) {
   return http.post(`/api/v1/products/${id}/publish`)
 }
 
+export function exportProductModel(id) {
+  return http.get(`/api/v1/products/${id}/model/export`, { responseType: 'blob' })
+}
+
+export function importProductModel(file) {
+  const data = new FormData()
+  data.append('file', file)
+  return http.post('/api/v1/products/model/import', data)
+}
+
+export function importProductModelInto(id, file) {
+  const data = new FormData()
+  data.append('file', file)
+  return http.put(`/api/v1/products/${id}/model/import`, data)
+}
+
 export function listProperties(productId) {
   return http.get(`/api/v1/products/${productId}/properties`)
 }

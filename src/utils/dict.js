@@ -4,10 +4,9 @@ export const userStatus = {
 }
 
 export const stationType = {
-  PV: { label: '光伏', type: 'success' },
   STORAGE: { label: '储能', type: 'warning' },
-  PV_STORAGE: { label: '光储', type: '' },
-  CHARGE: { label: '充电', type: 'primary' }
+  PV_STORAGE: { label: '光储', type: 'success' },
+  PV_STORAGE_CHARGE: { label: '光储充', type: 'primary' }
 }
 
 export const stationStatus = {

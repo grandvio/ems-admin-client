@@ -4,7 +4,16 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DictTag from '@/components/DictTag.vue'
 import Pager from '@/components/Pager.vue'
-import { createProduct, deleteProduct, pageProducts, publishProduct, updateProduct } from '@/api/thing'
+import {
+  createProduct,
+  deleteProduct,
+  exportProductModel,
+  importProductModel,
+  importProductModelInto,
+  pageProducts,
+  publishProduct,
+  updateProduct
+} from '@/api/thing'
 import { useTable } from '@/composables/useTable'
 import { useUserStore } from '@/stores/user'
 import { optionsOf, productStatus } from '@/utils/dict'
@@ -18,6 +27,8 @@ const { loading, rows, total, query, load, search } = useTable((page) => pagePro
 const visible = ref(false)
 const saving = ref(false)
 const formRef = ref()
+const fileRef = ref()
+const importTarget = ref(null)
 const form = reactive({})
 
 function openCreate() {
@@ -65,6 +76,52 @@ function openModel(path, row) {
   router.push({ path, query: { productId: row.id } })
 }
 
+async function exportModel(row) {
+  const response = await exportProductModel(row.id)
+  const disposition = response.headers?.['content-disposition'] || ''
+  const matched = disposition.match(/filename="([^"]+)"/)
+  const filename = matched?.[1] || `${row.code}-thing-model.json`
+  const url = URL.createObjectURL(response.data)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  ElMessage.success('已导出')
+}
+
+function pickImport(row) {
+  importTarget.value = row || null
+  fileRef.value.value = ''
+  fileRef.value.click()
+}
+
+async function onImport(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  if (!file.name.toLowerCase().endsWith('.json')) {
+    ElMessage.error('只支持 .json 文件')
+    return
+  }
+  const target = importTarget.value
+  if (target) {
+    try {
+      await ElMessageBox.confirm(
+        `导入将用文件内容替换「${target.name}」的编码、名称和说明，并重建它的属性、事件和服务。`,
+        '导入物模型',
+        { type: 'warning' }
+      )
+    } catch {
+      return
+    }
+  }
+  if (target) await importProductModelInto(target.id, file)
+  else await importProductModel(file)
+  ElMessage.success(target ? '已导入' : '已导入为新产品')
+  await load()
+}
+
 load()
 </script>
 
@@ -78,6 +135,7 @@ load()
         </el-select>
         <el-button type="primary" @click="search">查询</el-button>
         <span class="grow" />
+        <el-button v-if="user.hasPerm('thing:product:add')" @click="pickImport()">导入</el-button>
         <el-button v-if="user.hasPerm('thing:product:add')" type="primary" @click="openCreate">新建产品</el-button>
       </div>
       <el-table v-loading="loading" :data="rows" border>
@@ -91,11 +149,13 @@ load()
         <el-table-column label="创建时间" min-width="170">
           <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="280" fixed="right">
+        <el-table-column label="操作" width="400" fixed="right">
           <template #default="{ row }">
             <el-button v-if="user.hasPerm('thing:property:list')" link type="primary" @click="openModel('/thing/property', row)">属性</el-button>
             <el-button v-if="user.hasPerm('thing:event:list')" link type="primary" @click="openModel('/thing/event', row)">事件</el-button>
             <el-button v-if="user.hasPerm('thing:service:list')" link type="primary" @click="openModel('/thing/service', row)">服务</el-button>
+            <el-button v-if="user.hasPerm('thing:product:list')" link type="primary" @click="exportModel(row)">导出</el-button>
+            <el-button v-if="user.hasPerm('thing:product:edit')" link type="primary" @click="pickImport(row)">导入</el-button>
             <el-button v-if="user.hasPerm('thing:product:publish')" link type="primary" @click="publish(row)">发布</el-button>
             <el-button v-if="user.hasPerm('thing:product:edit')" link type="primary" @click="openEdit(row)">编辑</el-button>
             <el-button v-if="user.hasPerm('thing:product:remove')" link type="danger" @click="remove(row)">删除</el-button>
@@ -104,6 +164,8 @@ load()
       </el-table>
       <Pager v-model:page-num="query.pageNum" v-model:page-size="query.pageSize" :total="total" @change="load" />
     </section>
+
+    <input ref="fileRef" type="file" accept=".json,application/json" hidden @change="onImport" />
 
     <el-dialog v-model="visible" :title="form.id ? '编辑产品' : '新建产品'" width="520px">
       <el-form ref="formRef" :model="form" label-width="72px">

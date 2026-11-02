@@ -45,7 +45,38 @@ const runningDayText = computed(() => {
   const days = runningDays(station.value?.gridConnectedDate)
   return days === null ? '—' : `${days} 天`
 })
-const alarmCount = computed(() => devices.value.filter((item) => item.status === 'ALARM').length)
+const statusGroups = computed(() => {
+  const pcs = devices.value.filter((item) => kindOf(item) === 'pcs')
+  const bms = devices.value.filter((item) => kindOf(item) === 'bms')
+  const other = devices.value.filter((item) => kindOf(item) === 'other')
+  const groups = [
+    { key: 'gateway', label: '通讯盒', text: onlineText(gateways.value, 'onlineStatus') },
+    { key: 'pcs', label: 'PCS', text: onlineText(pcs) },
+    { key: 'bms', label: 'BMS', text: onlineText(bms) }
+  ]
+  if (other.length) groups.push({ key: 'other', label: '其他', text: onlineText(other) })
+  return groups
+})
+const topo = computed(() => {
+  const nodes = {
+    grid: { key: 'grid', title: '电网', hint: '并网点', value: showMetric(powerItem.value), icon: 'OfficeBuilding', tone: 'grid' },
+    load: { key: 'load', title: '负载', hint: '用电侧', value: '—', icon: 'House', tone: 'load' },
+    battery: { key: 'battery', title: '电池', hint: 'SOC', value: showMetric(socItem.value), icon: 'Box', tone: 'bms' },
+    pv: { key: 'pv', title: '光伏', hint: '发电侧', value: '—', icon: 'Sunny', tone: 'pv' },
+    charger: { key: 'charger', title: '充电桩', hint: '充电侧', value: '—', icon: 'Van', tone: 'charge' }
+  }
+  const layouts = {
+    STORAGE: { top: [nodes.grid], bottom: [nodes.load, nodes.battery] },
+    PV_STORAGE: { top: [nodes.pv, nodes.grid], bottom: [nodes.load, nodes.battery] },
+    PV_STORAGE_CHARGE: { top: [nodes.pv, nodes.grid, nodes.charger], bottom: [nodes.load, nodes.battery] }
+  }
+  const placed = layouts[station.value?.stationType] || layouts.STORAGE
+  return {
+    top: placed.top,
+    bottom: placed.bottom,
+    pcsValue: firstMetric(pcsBundles.value, ['runningstate'])?.value || '—'
+  }
+})
 
 onMounted(async () => {
   stations.value = user.hasPerm('station:station:list') ? await listAll(pageStations) : [...user.stations]
@@ -233,6 +264,10 @@ function findMetric(list, keys) {
   })
 }
 
+function onlineText(list, field = 'status') {
+  return `${list.length} 台 · ${countOnline(list, field)} 在线`
+}
+
 function countOnline(list, field = 'status') {
   const online = list.filter((item) => item[field] === 'ONLINE').length
   return `${online} / ${list.length}`
@@ -345,38 +380,41 @@ function displayText(value) {
       </article>
       <article class="card">
         <div class="card-title"><i class="mark orange"><el-icon><Cpu /></el-icon></i>设备状态</div>
-        <ul class="status-list">
-          <li><span>通讯盒</span><b>{{ countOnline(gateways, 'onlineStatus') }}</b></li>
-          <li><span>PCS</span><b>{{ countOnline(pcsBundles.map((item) => item.device)) }}</b></li>
-          <li><span>BMS</span><b>{{ countOnline(bmsBundles.map((item) => item.device)) }}</b></li>
-          <li><span>告警</span><b>{{ alarmCount }}</b></li>
-        </ul>
+        <div class="status-board">
+          <div v-for="group in statusGroups" :key="group.key">
+            <span>{{ group.label }}</span>
+            <b>{{ group.text }}</b>
+          </div>
+        </div>
       </article>
     </section>
 
     <section class="mid">
       <article class="card topo-card">
         <div class="card-title">电站拓扑</div>
-        <div class="topo">
-          <div class="node">
-            <div class="node-icon grid"><el-icon><OfficeBuilding /></el-icon></div>
-            <strong>电网</strong>
-            <span>并网点</span>
-            <em>{{ showMetric(powerItem) }}</em>
+        <div class="hub">
+          <div class="rail top" :class="`cols-${topo.top.length}`">
+            <div v-for="node in topo.top" :key="node.key" class="node">
+              <div class="node-icon" :class="node.tone"><el-icon><component :is="node.icon" /></el-icon></div>
+              <strong>{{ node.title }}</strong>
+              <span>{{ node.hint }} {{ node.value }}</span>
+            </div>
           </div>
-          <div class="link" />
-          <div class="node">
-            <div class="node-icon pcs"><el-icon><Switch /></el-icon></div>
-            <strong>PCS</strong>
-            <span>{{ pcsBundles.length }} 台 · {{ countOnline(pcsBundles.map((item) => item.device)) }} 在线</span>
-            <em>{{ firstMetric(pcsBundles, ['runningstate'])?.value || '—' }}</em>
+          <div class="stem" />
+          <div class="rail mid">
+            <div class="node">
+              <div class="node-icon pcs"><el-icon><Switch /></el-icon></div>
+              <strong>PCS</strong>
+              <span>{{ topo.pcsValue }}</span>
+            </div>
           </div>
-          <div class="link" />
-          <div class="node">
-            <div class="node-icon bms"><el-icon><Box /></el-icon></div>
-            <strong>电池 BMS</strong>
-            <span>{{ bmsBundles.length }} 台 · {{ countOnline(bmsBundles.map((item) => item.device)) }} 在线</span>
-            <em>SOC {{ showMetric(socItem) }}</em>
+          <div class="stem" />
+          <div class="rail bottom" :class="`cols-${topo.bottom.length}`">
+            <div v-for="node in topo.bottom" :key="node.key" class="node">
+              <div class="node-icon" :class="node.tone"><el-icon><component :is="node.icon" /></el-icon></div>
+              <strong>{{ node.title }}</strong>
+              <span>{{ node.hint }} {{ node.value }}</span>
+            </div>
           </div>
         </div>
         <p v-if="!devices.length" class="note">这座电站还没有设备。先在电站管理里把通讯盒、PCS、BMS 建好并绑定产品。</p>
@@ -432,6 +470,8 @@ function displayText(value) {
       </article>
       <article class="card info">
         <div class="card-title">电站资料</div>
+        <img v-if="station?.coverUrl" class="cover" :src="station.coverUrl" alt="电站图片" />
+        <p v-else class="note">还没有电站图片。可在电站编辑里上传。</p>
         <dl>
           <div><dt>名称</dt><dd>{{ displayText(station?.name) }}</dd></div>
           <div><dt>编码</dt><dd>{{ displayText(station?.code) }}</dd></div>
@@ -439,7 +479,6 @@ function displayText(value) {
           <div><dt>地址</dt><dd>{{ displayText(station?.address) }}</dd></div>
           <div><dt>时区</dt><dd>{{ displayText(station?.timezone) }}</dd></div>
           <div><dt>网关</dt><dd>{{ gateways.map((item) => item.name).join('、') || '—' }}</dd></div>
-          <div><dt>设备</dt><dd>{{ devices.map((item) => item.name).join('、') || '—' }}</dd></div>
         </dl>
       </article>
     </section>
@@ -499,6 +538,37 @@ function displayText(value) {
   grid-template-columns: 1.3fr 1.1fr 0.8fr;
 }
 
+.kpis .card {
+  padding: 10px 14px;
+}
+
+.kpis .mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.kpis .card-title {
+  font-size: 14px;
+}
+
+.kpis .metric-grid {
+  margin-top: 8px;
+  gap: 8px;
+}
+
+.kpis .metric-grid strong {
+  margin-top: 2px;
+  font-size: 16px;
+}
+
+.kpis .note {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .mid {
   grid-template-columns: 1.45fr 0.85fr 0.75fr;
 }
@@ -519,20 +589,32 @@ function displayText(value) {
 .node-icon {
   width: 32px;
   height: 32px;
-  border-radius: 8px;
+  border-radius: 10px;
   display: grid;
   place-items: center;
   color: #fff;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background-color: var(--glass, rgba(15, 118, 110, 0.55));
+  background-image: linear-gradient(155deg, rgba(255, 255, 255, 0.82) 0%, rgba(255, 255, 255, 0.18) 42%, rgba(255, 255, 255, 0.08) 100%);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.95),
+    inset 0 -8px 12px rgba(255, 255, 255, 0.22),
+    0 6px 12px rgba(15, 23, 42, 0.1);
+  backdrop-filter: blur(8px);
 }
 
-.green,
-.node-icon.bms { background: #16a34a; }
-.blue,
-.node-icon.grid { background: #2563eb; }
-.orange,
-.node-icon.pcs { background: #f97316; }
-.cyan { background: #0891b2; }
-.red { background: #e11d48; }
+.green { --glass: rgba(22, 163, 74, 0.55); }
+.blue { --glass: rgba(37, 99, 235, 0.55); }
+.orange { --glass: rgba(249, 115, 22, 0.55); }
+.cyan { --glass: rgba(8, 145, 178, 0.55); }
+.red { --glass: rgba(225, 29, 72, 0.55); }
+.node-icon.grid { --glass: rgba(37, 99, 235, 0.55); }
+.node-icon.pcs { --glass: rgba(249, 115, 22, 0.55); }
+.node-icon.bms { --glass: rgba(22, 163, 74, 0.55); }
+.node-icon.load { --glass: rgba(124, 58, 237, 0.55); }
+.node-icon.pv { --glass: rgba(234, 179, 8, 0.62); }
+.node-icon.charge { --glass: rgba(8, 145, 178, 0.55); }
 
 .metric-grid,
 .overview {
@@ -548,7 +630,6 @@ function displayText(value) {
 
 .metric-grid span,
 .overview span,
-.status-list span,
 .live-list span,
 .info dt {
   display: block;
@@ -558,14 +639,12 @@ function displayText(value) {
 
 .metric-grid strong,
 .overview strong,
-.status-list b,
 .live-list b {
   display: block;
   margin-top: 4px;
   font-size: 18px;
 }
 
-.status-list,
 .live-list,
 .info dl {
   list-style: none;
@@ -573,7 +652,6 @@ function displayText(value) {
   padding: 0;
 }
 
-.status-list li,
 .live-list li,
 .info dl div {
   display: flex;
@@ -588,51 +666,131 @@ function displayText(value) {
   justify-content: flex-start;
 }
 
+.live-list i {
+  flex-shrink: 0;
+}
+
 .live-list b {
   margin-left: auto;
   font-size: 14px;
 }
 
-.topo {
-  min-height: 180px;
-  margin-top: 18px;
+.status-board {
   display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.status-board > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.status-board span {
+  color: var(--ems-muted);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.status-board b {
+  font-size: 13px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.hub {
+  --topo-icon: 64px;
+  height: 500px;
+  margin-top: 8px;
+  display: grid;
+  grid-template-rows: auto 1fr auto 1fr auto;
+}
+
+.rail {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  justify-items: center;
   align-items: center;
-  justify-content: space-around;
+}
+
+.rail.mid {
+  grid-template-columns: 1fr;
+}
+
+.rail.cols-1 .node { grid-column: 2; }
+.rail.cols-2 .node:first-child { grid-column: 1; }
+.rail.cols-2 .node:last-child { grid-column: 3; }
+.rail.cols-3 .node:nth-child(1) { grid-column: 1; }
+.rail.cols-3 .node:nth-child(2) { grid-column: 2; }
+.rail.cols-3 .node:nth-child(3) { grid-column: 3; }
+
+.rail.cols-2::before,
+.rail.cols-3::before {
+  content: "";
+  position: absolute;
+  left: 16.67%;
+  right: 16.67%;
+  height: 2px;
+  background: #94a3b8;
+}
+
+.rail.top::before { bottom: 0; }
+.rail.bottom::before { top: 0; }
+
+.stem {
+  position: relative;
+}
+
+.stem::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -1px;
+  bottom: -1px;
+  width: 2px;
+  background: #94a3b8;
+  transform: translateX(-50%);
 }
 
 .node {
-  width: 140px;
+  position: relative;
+  z-index: 1;
+  width: max-content;
+  padding: 0 6px;
   text-align: center;
+  background: #fff;
+  border-radius: 12px;
+}
+
+.rail.bottom .node {
+  background: transparent;
+  transform: translateY(calc(var(--topo-icon) / -2));
 }
 
 .node strong,
-.node span,
-.node em {
+.node span {
   display: block;
 }
 
-.node span,
-.node em {
-  margin-top: 4px;
+.node span {
+  margin-top: 2px;
   color: var(--ems-muted);
   font-size: 12px;
-  font-style: normal;
+  white-space: nowrap;
 }
 
 .node-icon {
-  width: 54px;
-  height: 54px;
-  margin: 0 auto 8px;
-  border-radius: 14px;
-  font-size: 22px;
-}
-
-.link {
-  flex: 1;
-  height: 2px;
-  max-width: 80px;
-  background: linear-gradient(90deg, #fb923c, #fdba74);
+  position: relative;
+  z-index: 1;
+  width: var(--topo-icon);
+  height: var(--topo-icon);
+  margin: 0 auto 6px;
+  border-radius: 18px;
+  font-size: 28px;
 }
 
 .period {
@@ -651,6 +809,15 @@ function displayText(value) {
 .info dd {
   margin: 0;
   text-align: right;
+}
+
+.cover {
+  width: 100%;
+  height: 140px;
+  margin-top: 12px;
+  object-fit: cover;
+  border-radius: 10px;
+  background: #f8fafc;
 }
 
 @media (max-width: 1100px) {

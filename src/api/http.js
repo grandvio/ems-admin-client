@@ -17,6 +17,7 @@ http.interceptors.request.use((config) => {
 
 http.interceptors.response.use(
   (response) => {
+    if (response.config.responseType === 'blob') return response
     const body = response.data
     if (body && typeof body.code === 'number' && body.code !== 200) {
       ElMessage.error(body.msg || '请求失败')
@@ -25,8 +26,16 @@ http.interceptors.response.use(
     return body?.data
   },
   async (error) => {
+    let payload = error.response?.data
+    if (payload instanceof Blob) {
+      try {
+        payload = JSON.parse(await payload.text())
+      } catch {
+        payload = null
+      }
+    }
     const status = error.response?.status
-    const msg = error.response?.data?.msg || error.message || '网络异常'
+    const msg = payload?.msg || error.message || '网络异常'
     if (status === 401) {
       await forceLogout()
     }
